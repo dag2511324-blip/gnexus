@@ -10,6 +10,13 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     proxy: {
+      // Proxy /api requests to backend server
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+      },
+      // Proxy for Hugging Face API
       '/api/hf': {
         target: 'https://router.huggingface.co',
         changeOrigin: true,

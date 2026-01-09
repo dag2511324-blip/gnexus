@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { PageTransition } from "@/components/PageTransition";
 import AIChatWidget from "@/components/AIChatWidget";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
@@ -38,7 +38,13 @@ const Portfolio = lazy(() => import("./pages/Portfolio"));
 const Auth = lazy(() => import("./pages/Auth"));
 const Admin = lazy(() => import("./pages/Admin"));
 const Chat = lazy(() => import("./pages/Chat"));
-const Agent = lazy(() => import("./pages/Agent"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const Profile = lazy(() => import("./pages/Profile"));
+
+// Auth imports
+import { AuthProvider } from '@/contexts/AuthContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
 
 const queryClient = new QueryClient();
 
@@ -60,39 +66,44 @@ const App = () => {
             <Toaster />
             <Sonner />
             <BrowserRouter>
-              <ScrollToTop />
-              <SkipToContent />
-              <AnalyticsTracker />
-              <GoogleTranslateInitializer />
-              <PageTransition>
-                <Suspense fallback={<PageLoader message="Loading page..." />}>
-                  <Routes>
-                    <Route path="/" element={<Index />} />
-                    <Route path="/web-development" element={<WebDevelopment />} />
-                    <Route path="/3d-architecture" element={<ThreeDArchitecture />} />
-                    <Route path="/ai-automation" element={<AIAutomation />} />
-                    <Route path="/gnexus" element={<GNexusPlatform />} />
-                    <Route path="/about" element={<About />} />
-                    <Route path="/team" element={<Team />} />
-                    <Route path="/careers" element={<Careers />} />
-                    <Route path="/blog" element={<Blog />} />
-                    <Route path="/contact" element={<Contact />} />
-                    <Route path="/faq" element={<FAQ />} />
-                    <Route path="/documentation" element={<Documentation />} />
-                    <Route path="/status" element={<Status />} />
-                    <Route path="/portfolio" element={<Portfolio />} />
-                    <Route path="/auth" element={<Auth />} />
-                    <Route path="/admin" element={<Admin />} />
-                    <Route path="/chat" element={<Chat />} />
-                    <Route path="/agent" element={<Agent />} />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </Suspense>
-              </PageTransition>
-              <AIChatWidget />
-              <CommandPalette />
-              <PWAInstallPrompt />
-              <CookieConsent />
+              <AuthProvider>
+                <ScrollToTop />
+                <SkipToContent />
+                <AnalyticsTracker />
+                <GoogleTranslateInitializer />
+                <PageTransition>
+                  <Suspense fallback={<PageLoader message="Loading page..." />}>
+                    <Routes>
+                      <Route path="/" element={<Index />} />
+                      <Route path="/web-development" element={<WebDevelopment />} />
+                      <Route path="/3d-architecture" element={<ThreeDArchitecture />} />
+                      <Route path="/ai-automation" element={<AIAutomation />} />
+                      <Route path="/gnexus" element={<GNexusPlatform />} />
+                      <Route path="/about" element={<About />} />
+                      <Route path="/team" element={<Team />} />
+                      <Route path="/careers" element={<Careers />} />
+                      <Route path="/blog" element={<Blog />} />
+                      <Route path="/contact" element={<Contact />} />
+                      <Route path="/faq" element={<FAQ />} />
+                      <Route path="/documentation" element={<Documentation />} />
+                      <Route path="/status" element={<Status />} />
+                      <Route path="/portfolio" element={<Portfolio />} />
+                      <Route path="/login" element={<Login />} />
+                      <Route path="/register" element={<Register />} />
+                      <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                      <Route path="/auth" element={<Auth />} />
+                      <Route path="/admin" element={<Admin />} />
+                      <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
+                      <Route path="/agent" element={<Navigate to="/chat?mode=agent" replace />} />
+                      <Route path="*" element={<NotFound />} />
+                    </Routes>
+                  </Suspense>
+                </PageTransition>
+                <AIChatWidget />
+                <CommandPalette />
+                <PWAInstallPrompt />
+                <CookieConsent />
+              </AuthProvider>
             </BrowserRouter>
           </TooltipProvider>
         </QueryClientProvider>

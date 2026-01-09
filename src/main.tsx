@@ -8,4 +8,7 @@ import { gsap } from "gsap";
 // but don't indicate actual errors since we use proper ref checks and context cleanup
 gsap.config({ nullTargetWarn: false });
 
+// Import profile test for development
+import './test/profile-test';
+
 createRoot(document.getElementById("root")!).render(<App />);

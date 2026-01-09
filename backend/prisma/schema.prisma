@@ -1,0 +1,134 @@
+// Prisma Schema for G-Nexus Chat Backend
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USER MANAGEMENT
+// ============================================================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password      String   // bcrypt hashed
+  username      String   @unique
+  firstName     String?
+  lastName      String?
+  avatar        String?
+  
+  // Preferences
+  defaultModel  String   @default("planner")
+  theme         String   @default("dark")
+  
+  // Metadata
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastLoginAt   DateTime?
+  isActive      Boolean  @default(true)
+  emailVerified Boolean  @default(false)
+  
+  // Relations
+  conversations Conversation[]
+  apiKeys       ApiKey[]
+  sessions      Session[]
+  
+  @@map("users")
+}
+
+// ============================================================================
+// SESSION MANAGEMENT
+// ============================================================================
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ============================================================================
+// CONVERSATIONS
+// ============================================================================
+
+model Conversation {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  title       String
+  model       String    // AI model used (planner, coder, etc.)
+  
+  // Metadata
+  isStarred   Boolean   @default(false)
+  isArchived  Boolean   @default(false)
+  tags        String[]  @default([])
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relations
+  messages    Message[]
+  
+  @@index([userId, createdAt])
+  @@index([userId, isArchived])
+  @@map("conversations")
+}
+
+// ============================================================================
+// MESSAGES
+// ============================================================================
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  role           String       // 'user' | 'assistant' | 'system'
+  content        String       @db.Text
+  
+  // Metadata
+  model          String?      // Which AI model generated this (for assistant messages)
+  tokens         Int?         // Token count
+  latency        Int?         // Response time in ms
+  attachments    Json[]       @default([])
+  
+  createdAt      DateTime     @default(now())
+  
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+// ============================================================================
+// API KEY MANAGEMENT
+// ============================================================================
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name      String   // User-friendly name
+  key       String   // Encrypted API key
+  provider  String   // 'openrouter', 'huggingface', etc.
+  
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  lastUsed  DateTime?
+  
+  @@index([userId])
+  @@map("api_keys")
+}

@@ -484,13 +484,115 @@ export function useNexus(): UseNexusReturn {
 // =============================================================================
 
 /**
- * Hook for chat conversations with message history
+ * Hook for chat conversations with message history and backend persistence
  */
 export function useNexusChat(initialModel: ModelKey = 'planner') {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [activeModel, setActiveModel] = useState<ModelKey>(initialModel);
+    const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+    const [conversations, setConversations] = useState<any[]>([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [savingMessage, setSavingMessage] = useState(false);
     const nexus = useNexus();
 
+    // Import conversation API (dynamic to avoid circular deps)
+    const conversationAPI = useCallback(async () => {
+        return await import('@/lib/api/conversations');
+    }, []);
+
+    /**
+     * Fetch user's conversation history
+     */
+    const fetchConversationHistory = useCallback(async (params?: any) => {
+        setLoadingHistory(true);
+        try {
+            const api = await conversationAPI();
+            const response = await api.fetchConversations(params);
+            setConversations(response.conversations);
+            return response;
+        } catch (error) {
+            console.error('Failed to fetch conversations:', error);
+            return null;
+        } finally {
+            setLoadingHistory(false);
+        }
+    }, [conversationAPI]);
+
+    /**
+     * Create a new conversation
+     */
+    const createNewConversation = useCallback(async (title?: string, model?: ModelKey) => {
+        try {
+            const api = await conversationAPI();
+            const conversation = await api.createConversation({
+                title: title || 'New Conversation',
+                model: model || activeModel,
+            });
+            setCurrentConversationId(conversation.id);
+            setMessages([]);
+            setConversations(prev => [conversation, ...prev]);
+            return conversation.id;
+        } catch (error) {
+            console.error('Failed to create conversation:', error);
+            return null;
+        }
+    }, [conversationAPI, activeModel]);
+
+    /**
+     * Load an existing conversation
+     */
+    const loadConversation = useCallback(async (id: string) => {
+        setLoadingHistory(true);
+        try {
+            const api = await conversationAPI();
+            const conversation = await api.getConversation(id);
+
+            // Convert backend messages to ChatMessage format
+            const chatMessages: ChatMessage[] = conversation.messages.map(msg => ({
+                id: msg.id,
+                role: msg.role,
+                content: msg.content,
+                timestamp: new Date(msg.createdAt),
+                model: msg.model as ModelKey | undefined,
+                status: 'sent' as const,
+            }));
+
+            setMessages(chatMessages);
+            setCurrentConversationId(id);
+            setActiveModel(conversation.model as ModelKey);
+            return chatMessages;
+        } catch (error) {
+            console.error('Failed to load conversation:', error);
+            return null;
+        } finally {
+            setLoadingHistory(false);
+        }
+    }, [conversationAPI]);
+
+    /**
+     * Save a message to the backend
+     */
+    const saveMessageToBackend = useCallback(async (
+        conversationId: string,
+        role: 'user' | 'assistant' | 'system',
+        content: string,
+        model?: string
+    ) => {
+        try {
+            const api = await conversationAPI();
+            await api.addMessageToConversation(conversationId, {
+                role,
+                content,
+                model,
+            });
+        } catch (error) {
+            console.error('Failed to save message:', error);
+        }
+    }, [conversationAPI]);
+
+    /**
+     * Send a message (with auto-save to backend)
+     */
     const sendMessage = useCallback(async (content: string) => {
         const userMessage: ChatMessage = {
             id: `msg-${Date.now()}`,
@@ -502,7 +604,38 @@ export function useNexusChat(initialModel: ModelKey = 'planner') {
 
         setMessages(prev => [...prev, userMessage]);
 
-        const response = await nexus.chat([...messages, userMessage], activeModel);
+        // Create conversation if this is the first message
+        let convId = currentConversationId;
+        if (!convId) {
+            const api = await conversationAPI();
+            const title = api.generateConversationTitle(content);
+            convId = await createNewConversation(title, activeModel);
+            if (!convId) {
+                console.error('Failed to create conversation');
+                return null;
+            }
+        }
+
+        // Save user message to backend
+        setSavingMessage(true);
+        await saveMessageToBackend(convId, 'user', content);
+        setSavingMessage(false);
+
+        // Add system message for first interaction to set AI identity
+        const systemMessage: ChatMessage = {
+            id: 'system-prompt',
+            role: 'system',
+            content: `You are G AI, developed by Dagmawi Amare, CEO of Gnexus. When introducing yourself or greeting users, say "I'm G AI by Dagmawi Amare, CEO of Gnexus. Ready to assist with your tasks!" Be helpful, professional, and provide high-quality responses.`,
+            timestamp: new Date(),
+            status: 'sent',
+        };
+
+        // Include system message if this is the first user message
+        const conversationMessages = messages.length === 0
+            ? [systemMessage, userMessage]
+            : [...messages, userMessage];
+
+        const response = await nexus.chat(conversationMessages, activeModel);
 
         if (response) {
             const assistantMessage: ChatMessage = {
@@ -514,13 +647,75 @@ export function useNexusChat(initialModel: ModelKey = 'planner') {
                 status: 'sent',
             };
             setMessages(prev => [...prev, assistantMessage]);
+
+            // Save assistant message to backend
+            setSavingMessage(true);
+            await saveMessageToBackend(convId, 'assistant', response, activeModel);
+            setSavingMessage(false);
         }
 
         return response;
-    }, [messages, activeModel, nexus]);
+    }, [messages, activeModel, currentConversationId, nexus, conversationAPI, createNewConversation, saveMessageToBackend]);
+
+    /**
+     * Delete the current conversation
+     */
+    const deleteCurrentConversation = useCallback(async () => {
+        if (!currentConversationId) return;
+
+        try {
+            const api = await conversationAPI();
+            await api.deleteConversation(currentConversationId);
+            setConversations(prev => prev.filter(c => c.id !== currentConversationId));
+            setCurrentConversationId(null);
+            setMessages([]);
+        } catch (error) {
+            console.error('Failed to delete conversation:', error);
+        }
+    }, [currentConversationId, conversationAPI]);
+
+    /**
+     * Star a conversation
+     */
+    const starConversation = useCallback(async (id: string, isStarred: boolean) => {
+        try {
+            const api = await conversationAPI();
+            const updated = await api.toggleStarConversation(id, isStarred);
+            setConversations(prev => prev.map(c => c.id === id ? updated : c));
+        } catch (error) {
+            console.error('Failed to star conversation:', error);
+        }
+    }, [conversationAPI]);
+
+    /**
+     * Archive a conversation
+     */
+    const archiveConversation = useCallback(async (id: string, isArchived: boolean) => {
+        try {
+            const api = await conversationAPI();
+            const updated = await api.toggleArchiveConversation(id, isArchived);
+            setConversations(prev => prev.map(c => c.id === id ? updated : c));
+        } catch (error) {
+            console.error('Failed to archive conversation:', error);
+        }
+    }, [conversationAPI]);
+
+    /**
+     * Rename a conversation
+     */
+    const renameConversation = useCallback(async (id: string, title: string) => {
+        try {
+            const api = await conversationAPI();
+            const updated = await api.renameConversation(id, title);
+            setConversations(prev => prev.map(c => c.id === id ? updated : c));
+        } catch (error) {
+            console.error('Failed to rename conversation:', error);
+        }
+    }, [conversationAPI]);
 
     const clearMessages = useCallback(() => {
         setMessages([]);
+        setCurrentConversationId(null);
     }, []);
 
     return {
@@ -529,9 +724,26 @@ export function useNexusChat(initialModel: ModelKey = 'planner') {
         setActiveModel,
         sendMessage,
         clearMessages,
+
+        // Backend integration
+        currentConversationId,
+        conversations,
+        loadingHistory,
+        savingMessage,
+
+        // Conversation management
+        fetchConversationHistory,
+        createNewConversation,
+        loadConversation,
+        deleteCurrentConversation,
+        starConversation,
+        archiveConversation,
+        renameConversation,
+
         ...nexus,
     };
 }
+
 
 /**
  * Hook for agent selection and task dispatch
@@ -560,11 +772,59 @@ export function useAgentDispatcher() {
         let response: string | null = null;
 
         if (modelInfo.category === 'image') {
-            // Image generation models
+            // Image generation models - single model execution
             response = await nexus.generateVisual(prompt, selectedAgent as 'flux' | 'playground' | 'sdxl');
         } else {
-            // Text-based models (code, text, chat, analysis, agent)
-            response = await nexus.askAgent(selectedAgent, prompt);
+            // 🚀 SERVICE-SPECIFIC MULTI-AGENT PIPELINE ORCHESTRATION
+            // Import pipeline router dynamically
+            const { getPipelineForService, hasCustomPipeline } = await import('@/lib/AgentPipelineRouter');
+
+            if (hasCustomPipeline(selectedAgent)) {
+                try {
+                    const pipeline = getPipelineForService(selectedAgent);
+                    if (!pipeline) throw new Error('Pipeline not found');
+
+                    // Execute each node in the pipeline sequentially
+                    const nodeOutputs: Record<string, string> = {};
+                    const nodeResults: string[] = [];
+
+                    for (const node of pipeline.nodes) {
+                        console.log(`[Pipeline] Executing ${node.title} with ${node.model}...`);
+
+                        // Generate prompt for this node with context from previous nodes
+                        const nodePrompt = node.promptTemplate(prompt, nodeOutputs);
+
+                        // Execute with the specified model
+                        const nodeResult = await nexus.askAgent(node.model, nodePrompt);
+
+                        if (!nodeResult) {
+                            throw new Error(`${node.title} failed`);
+                        }
+
+                        // Store result for next nodes
+                        nodeOutputs[node.id] = nodeResult;
+
+                        // Format result for final output
+                        nodeResults.push(`[NODE ${pipeline.nodes.indexOf(node) + 1}: ${node.title}] ${node.emoji}
+*Model:* ${AI_MODELS[node.model].name}
+*Process:*
+${nodeResult}
+`);
+                    }
+
+                    // Compile final structured output
+                    response = nodeResults.join('\n');
+
+                } catch (error) {
+                    console.error('[Service Pipeline Error]:', error);
+                    // Fallback to simple single-model execution
+                    const fallbackPrompt = `Process this request with high quality: ${prompt}`;
+                    response = await nexus.askAgent(selectedAgent, fallbackPrompt);
+                }
+            } else {
+                // No custom pipeline - use simple execution
+                response = await nexus.askAgent(selectedAgent, prompt);
+            }
         }
 
         const completedTask: AgentTask = {
