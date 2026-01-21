@@ -14,288 +14,299 @@ export type Database = {
   }
   public: {
     Tables: {
-      activity_log: {
+      artifacts: {
         Row: {
-          action: string
-          created_at: string
-          details: Json | null
+          content: Json
+          created_at: string | null
           id: string
-          target_id: string | null
-          target_type: string | null
-          user_email: string | null
-          user_id: string | null
+          name: string
+          project_id: string
+          session_id: string | null
+          type: string
         }
         Insert: {
-          action: string
-          created_at?: string
-          details?: Json | null
+          content: Json
+          created_at?: string | null
           id?: string
-          target_id?: string | null
-          target_type?: string | null
-          user_email?: string | null
-          user_id?: string | null
+          name: string
+          project_id: string
+          session_id?: string | null
+          type: string
         }
         Update: {
-          action?: string
-          created_at?: string
-          details?: Json | null
+          content?: Json
+          created_at?: string | null
           id?: string
-          target_id?: string | null
-          target_type?: string | null
-          user_email?: string | null
-          user_id?: string | null
+          name?: string
+          project_id?: string
+          session_id?: string | null
+          type?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "artifacts_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "artifacts_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
-      admin_settings: {
-        Row: {
-          description: string | null
-          id: string
-          key: string
-          updated_at: string
-          updated_by: string | null
-          value: Json
-        }
-        Insert: {
-          description?: string | null
-          id?: string
-          key: string
-          updated_at?: string
-          updated_by?: string | null
-          value?: Json
-        }
-        Update: {
-          description?: string | null
-          id?: string
-          key?: string
-          updated_at?: string
-          updated_by?: string | null
-          value?: Json
-        }
-        Relationships: []
-      }
-      chat_conversations: {
+      generation_history: {
         Row: {
           created_at: string
+          duration_ms: number | null
+          error_message: string | null
           id: string
-          last_message_at: string | null
-          resolved_at: string | null
-          resolved_by: string | null
-          session_id: string
-          status: string | null
-          updated_at: string
-          user_email: string | null
-          user_name: string | null
+          modality: string
+          model_id: string
+          model_name: string
+          parameters: Json | null
+          prompt: string
+          result_type: string | null
+          result_url: string | null
+          status: string
+          user_id: string
         }
         Insert: {
           created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
           id?: string
-          last_message_at?: string | null
-          resolved_at?: string | null
-          resolved_by?: string | null
-          session_id: string
-          status?: string | null
-          updated_at?: string
-          user_email?: string | null
-          user_name?: string | null
+          modality: string
+          model_id: string
+          model_name: string
+          parameters?: Json | null
+          prompt: string
+          result_type?: string | null
+          result_url?: string | null
+          status?: string
+          user_id: string
         }
         Update: {
           created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
           id?: string
-          last_message_at?: string | null
-          resolved_at?: string | null
-          resolved_by?: string | null
-          session_id?: string
-          status?: string | null
-          updated_at?: string
-          user_email?: string | null
-          user_name?: string | null
+          modality?: string
+          model_id?: string
+          model_name?: string
+          parameters?: Json | null
+          prompt?: string
+          result_type?: string | null
+          result_url?: string | null
+          status?: string
+          user_id?: string
         }
         Relationships: []
       }
-      chat_messages: {
+      messages: {
         Row: {
           content: string
-          conversation_id: string
-          created_at: string
+          created_at: string | null
           id: string
-          is_read: boolean | null
+          model_used: string | null
           role: string
+          session_id: string
         }
         Insert: {
           content: string
-          conversation_id: string
-          created_at?: string
+          created_at?: string | null
           id?: string
-          is_read?: boolean | null
+          model_used?: string | null
           role: string
+          session_id: string
         }
         Update: {
           content?: string
-          conversation_id?: string
-          created_at?: string
+          created_at?: string | null
           id?: string
-          is_read?: boolean | null
+          model_used?: string | null
           role?: string
+          session_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "chat_messages_conversation_id_fkey"
-            columns: ["conversation_id"]
+            foreignKeyName: "messages_session_id_fkey"
+            columns: ["session_id"]
             isOneToOne: false
-            referencedRelation: "chat_conversations"
+            referencedRelation: "sessions"
             referencedColumns: ["id"]
           },
         ]
-      }
-      chat_ratings: {
-        Row: {
-          conversation_id: string
-          created_at: string
-          feedback_text: string | null
-          id: string
-          rating: number
-        }
-        Insert: {
-          conversation_id: string
-          created_at?: string
-          feedback_text?: string | null
-          id?: string
-          rating: number
-        }
-        Update: {
-          conversation_id?: string
-          created_at?: string
-          feedback_text?: string | null
-          id?: string
-          rating?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "chat_ratings_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "chat_conversations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      portfolio_projects: {
-        Row: {
-          category: string
-          client: string | null
-          created_at: string
-          description: string | null
-          display_order: number | null
-          featured: boolean | null
-          id: string
-          image_url: string | null
-          project_url: string | null
-          technologies: string[] | null
-          title: string
-          updated_at: string
-        }
-        Insert: {
-          category: string
-          client?: string | null
-          created_at?: string
-          description?: string | null
-          display_order?: number | null
-          featured?: boolean | null
-          id?: string
-          image_url?: string | null
-          project_url?: string | null
-          technologies?: string[] | null
-          title: string
-          updated_at?: string
-        }
-        Update: {
-          category?: string
-          client?: string | null
-          created_at?: string
-          description?: string | null
-          display_order?: number | null
-          featured?: boolean | null
-          id?: string
-          image_url?: string | null
-          project_url?: string | null
-          technologies?: string[] | null
-          title?: string
-          updated_at?: string
-        }
-        Relationships: []
       }
       profiles: {
         Row: {
           avatar_url: string | null
-          created_at: string
+          created_at: string | null
           email: string | null
           full_name: string | null
           id: string
-          updated_at: string
+          updated_at: string | null
         }
         Insert: {
           avatar_url?: string | null
-          created_at?: string
+          created_at?: string | null
           email?: string | null
           full_name?: string | null
           id: string
-          updated_at?: string
+          updated_at?: string | null
         }
         Update: {
           avatar_url?: string | null
-          created_at?: string
+          created_at?: string | null
           email?: string | null
           full_name?: string | null
           id?: string
-          updated_at?: string
+          updated_at?: string | null
         }
         Relationships: []
       }
-      site_settings: {
+      projects: {
         Row: {
+          business_model: string | null
+          created_at: string | null
+          description: string | null
           id: string
-          key: string
-          updated_at: string
-          updated_by: string | null
-          value: Json | null
+          name: string
+          platforms: string[] | null
+          product_type: string | null
+          status: string | null
+          target_audience: string | null
+          updated_at: string | null
+          user_id: string
         }
         Insert: {
+          business_model?: string | null
+          created_at?: string | null
+          description?: string | null
           id?: string
-          key: string
-          updated_at?: string
-          updated_by?: string | null
-          value?: Json | null
+          name: string
+          platforms?: string[] | null
+          product_type?: string | null
+          status?: string | null
+          target_audience?: string | null
+          updated_at?: string | null
+          user_id: string
         }
         Update: {
+          business_model?: string | null
+          created_at?: string | null
+          description?: string | null
           id?: string
-          key?: string
-          updated_at?: string
-          updated_by?: string | null
-          value?: Json | null
+          name?: string
+          platforms?: string[] | null
+          product_type?: string | null
+          status?: string | null
+          target_audience?: string | null
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
+      }
+      sessions: {
+        Row: {
+          artifact_count: number | null
+          current_phase: number | null
+          end_time: string | null
+          id: string
+          message_count: number | null
+          project_id: string
+          start_time: string | null
+          user_id: string
+        }
+        Insert: {
+          artifact_count?: number | null
+          current_phase?: number | null
+          end_time?: string | null
+          id?: string
+          message_count?: number | null
+          project_id: string
+          start_time?: string | null
+          user_id: string
+        }
+        Update: {
+          artifact_count?: number | null
+          current_phase?: number | null
+          end_time?: string | null
+          id?: string
+          message_count?: number | null
+          project_id?: string
+          start_time?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
-          created_at: string
+          created_at: string | null
           id: string
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Insert: {
-          created_at?: string
+          created_at?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Update: {
-          created_at?: string
+          created_at?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
         }
         Relationships: []
+      }
+      workflow_progress: {
+        Row: {
+          id: string
+          phase_number: number
+          project_id: string
+          status: string | null
+          substeps: Json | null
+          time_spent: number | null
+        }
+        Insert: {
+          id?: string
+          phase_number: number
+          project_id: string
+          status?: string | null
+          substeps?: Json | null
+          time_spent?: number | null
+        }
+        Update: {
+          id?: string
+          phase_number?: number
+          project_id?: string
+          status?: string | null
+          substeps?: Json | null
+          time_spent?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_progress_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -309,10 +320,9 @@ export type Database = {
         }
         Returns: boolean
       }
-      is_super_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      app_role: "admin" | "moderator" | "user" | "super_admin"
+      app_role: "admin" | "moderator" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -440,7 +450,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "moderator", "user", "super_admin"],
+      app_role: ["admin", "moderator", "user"],
     },
   },
 } as const

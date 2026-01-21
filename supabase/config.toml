@@ -1,4 +1,16 @@
-project_id = "kfkmxofvdywgcbjgqddo"
+project_id = "gdjhducrlrjciinfguwh"
 
-[functions.ai-chat]
+[functions.openrouter-chat]
+verify_jwt = false
+
+[functions.huggingface-text]
+verify_jwt = false
+
+[functions.huggingface-image]
+verify_jwt = false
+
+[functions.huggingface-audio]
+verify_jwt = false
+
+[functions.huggingface-video]
 verify_jwt = false

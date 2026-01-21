@@ -1,620 +1,683 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  LayoutDashboard, MessageSquare, FolderOpen, Settings,
-  Users, LogOut, Menu, X, ChevronRight, BarChart3,
-  Bot, Eye, Trash2, Edit2, Plus, Loader2, Shield, User as UserIcon,
-  TrendingUp, Clock, Star
+  Sparkles,
+  Users,
+  FolderOpen,
+  Activity,
+  Layout,
+  ArrowLeft,
+  Search,
+  Shield,
+  Clock,
+  MoreVertical,
+  Trash2,
+  UserCheck,
+  UserX,
+  Download,
+  RefreshCw,
+  Brain,
+  Settings,
+  BarChart3,
+  Zap,
 } from 'lucide-react';
+import { AITrainer } from '@/components/admin/AITrainer';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Table, TableBody, TableCell, TableHead,
-  TableHeader, TableRow
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel,
-  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
-  AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/hooks/use-toast';
+import { ThemeToggleSimple } from '@/components/ui/theme-toggle';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { ProjectFormDialog } from '@/components/admin/ProjectFormDialog';
-import { UserRolesManager } from '@/components/admin/UserRolesManager';
-import { EnhancedChatView } from '@/components/admin/EnhancedChatView';
-import { AdminAnalytics } from '@/components/admin/AdminAnalytics';
-import { AdminSettings } from '@/components/admin/AdminSettings';
-import { ActivityLog } from '@/components/admin/ActivityLog';
-import { LightErrorBoundary } from '@/components/ErrorBoundary';
-import type { User } from '@supabase/supabase-js';
-import { formatDistanceToNow } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
+
+interface User {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  created_at: string;
+  role?: string;
+}
 
 interface Project {
   id: string;
-  title: string;
-  description: string | null;
-  category: string;
-  client: string | null;
-  featured: boolean | null;
-  created_at: string;
-  image_url: string | null;
-  technologies: string[] | null;
-  project_url: string | null;
-}
-
-interface DashboardStats {
-  totalChats: number;
-  totalProjects: number;
-  activeConversations: number;
-  avgRating: number;
-  todayChats: number;
-}
-
-interface RecentConversation {
-  id: string;
-  session_id: string;
-  user_email: string | null;
-  created_at: string;
+  name: string;
+  user_id: string;
   status: string;
-  message_count: number;
-  last_message_preview: string;
+  created_at: string;
+  user_email?: string;
 }
 
-const Admin = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
-  const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [stats, setStats] = useState<DashboardStats>({
-    totalChats: 0,
-    totalProjects: 0,
-    activeConversations: 0,
-    avgRating: 0,
-    todayChats: 0,
-  });
-  const [recentConversations, setRecentConversations] = useState<RecentConversation[]>([]);
-  const [newChatCount, setNewChatCount] = useState(0);
+interface Session {
+  id: string;
+  project_id: string;
+  user_id: string;
+  start_time: string;
+  message_count: number;
+  artifact_count: number;
+  project_name?: string;
+  user_email?: string;
+}
 
+interface Stats {
+  totalUsers: number;
+  totalProjects: number;
+  totalSessions: number;
+  totalArtifacts: number;
+}
+
+export default function Admin() {
+  const { user, isAdmin, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const [stats, setStats] = useState<Stats>({
+    totalUsers: 0,
+    totalProjects: 0,
+    totalSessions: 0,
+    totalArtifacts: 0,
+  });
+  const [users, setUsers] = useState<User[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('overview');
+
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
-      if (!session?.user) {
+    if (!authLoading) {
+      if (!user) {
         navigate('/auth');
+      } else if (!isAdmin) {
+        toast({
+          title: 'Access Denied',
+          description: 'You do not have admin privileges',
+          variant: 'destructive',
+        });
+        navigate('/');
       }
-    });
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (!session?.user) {
-        navigate('/auth');
-      } else {
-        setIsLoading(false);
-        fetchData();
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  // Real-time subscription for new chats notification
-  useEffect(() => {
-    const channel = supabase
-      .channel('new-chats-notification')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chat_conversations' },
-        () => {
-          setNewChatCount(prev => prev + 1);
-          fetchData();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  // Clear notification when switching to chats tab
-  useEffect(() => {
-    if (activeTab === 'chats') {
-      setNewChatCount(0);
     }
-  }, [activeTab]);
+  }, [user, isAdmin, authLoading, navigate, toast]);
+
+  useEffect(() => {
+    if (user && isAdmin) {
+      fetchData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isAdmin]);
 
   const fetchData = async () => {
+    setIsLoading(true);
     try {
-      // Fetch conversations with message counts
-      const { data: convData } = await supabase
-        .from('chat_conversations')
+      // Fetch stats
+      const [
+        { count: userCount },
+        { count: projectCount },
+        { count: sessionCount },
+        { count: artifactCount },
+      ] = await Promise.all([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('projects').select('*', { count: 'exact', head: true }),
+        supabase.from('sessions').select('*', { count: 'exact', head: true }),
+        supabase.from('artifacts').select('*', { count: 'exact', head: true }),
+      ]);
+
+      setStats({
+        totalUsers: userCount || 0,
+        totalProjects: projectCount || 0,
+        totalSessions: sessionCount || 0,
+        totalArtifacts: artifactCount || 0,
+      });
+
+      // Fetch users with roles
+      const { data: profilesData } = await supabase
+        .from('profiles')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (profilesData) {
+        // Get roles for each user
+        const userIds = profilesData.map((p) => p.id);
+        const { data: rolesData } = await supabase
+          .from('user_roles')
+          .select('user_id, role')
+          .in('user_id', userIds);
+
+        const usersWithRoles = profilesData.map((profile) => ({
+          ...profile,
+          role: rolesData?.find((r) => r.user_id === profile.id)?.role || 'user',
+        }));
+
+        setUsers(usersWithRoles);
+      }
 
       // Fetch projects
-      const { data: projData } = await supabase
-        .from('portfolio_projects')
+      const { data: projectsData } = await supabase
+        .from('projects')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(100);
 
-      setProjects(projData || []);
+      setProjects(projectsData || []);
 
-      // Fetch ratings for average
-      const { data: ratingsData } = await supabase
-        .from('chat_ratings')
-        .select('rating');
+      // Fetch sessions
+      const { data: sessionsData } = await supabase
+        .from('sessions')
+        .select('*')
+        .order('start_time', { ascending: false })
+        .limit(100);
 
-      const avgRating = ratingsData && ratingsData.length > 0
-        ? ratingsData.reduce((a, b) => a + b.rating, 0) / ratingsData.length
-        : 0;
-
-      // Calculate today's chats
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayChats = convData?.filter(c => new Date(c.created_at) >= today).length || 0;
-
-      // Get recent conversations with message counts
-      const recentConvs = await Promise.all(
-        (convData || []).slice(0, 5).map(async (conv) => {
-          const { data: messages } = await supabase
-            .from('chat_messages')
-            .select('content')
-            .eq('conversation_id', conv.id)
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-          const { count } = await supabase
-            .from('chat_messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('conversation_id', conv.id);
-
-          return {
-            ...conv,
-            message_count: count || 0,
-            last_message_preview: messages?.[0]?.content?.slice(0, 40) || '',
-          };
-        })
-      );
-
-      setRecentConversations(recentConvs);
-
-      // Calculate stats
-      setStats({
-        totalChats: convData?.length || 0,
-        totalProjects: projData?.length || 0,
-        activeConversations: convData?.filter(c => c.status === 'active').length || 0,
-        avgRating: Math.round(avgRating * 10) / 10,
-        todayChats,
-      });
+      setSessions(sessionsData || []);
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('Error fetching admin data:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch admin data',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleDeleteProject = async (projectId: string) => {
+  const toggleAdminRole = async (userId: string, currentRole: string) => {
+    try {
+      if (currentRole === 'admin') {
+        // Remove admin role
+        await supabase
+          .from('user_roles')
+          .delete()
+          .eq('user_id', userId)
+          .eq('role', 'admin');
+
+        // Ensure user role exists
+        await supabase
+          .from('user_roles')
+          .upsert({ user_id: userId, role: 'user' });
+      } else {
+        // Add admin role
+        await supabase
+          .from('user_roles')
+          .upsert({ user_id: userId, role: 'admin' });
+      }
+
+      toast({
+        title: 'Role updated',
+        description: `User role has been ${currentRole === 'admin' ? 'revoked' : 'granted'} admin access`,
+      });
+
+      fetchData();
+      fetchData();
+    } catch (error) {
+      console.error('Error updating role:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to update role',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const deleteProject = async (projectId: string) => {
     try {
       const { error } = await supabase
-        .from('portfolio_projects')
+        .from('projects')
         .delete()
         .eq('id', projectId);
 
       if (error) throw error;
 
-      // Log activity
-      await supabase.from('activity_log').insert({
-        user_id: user?.id,
-        user_email: user?.email,
-        action: 'Deleted project',
-        target_type: 'portfolio_project',
-        target_id: projectId,
+      toast({
+        title: 'Project deleted',
+        description: 'The project has been removed',
       });
 
-      toast({ title: 'Project deleted successfully' });
+      fetchData();
       fetchData();
     } catch (error) {
       console.error('Error deleting project:', error);
       toast({
-        title: 'Error deleting project',
-        variant: 'destructive'
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete project',
+        variant: 'destructive',
       });
     }
   };
 
-  const handleEditProject = (project: Project) => {
-    setEditingProject(project);
-    setProjectDialogOpen(true);
+  const exportData = (type: 'users' | 'projects' | 'sessions') => {
+    let data: User[] | Project[] | Session[];
+    let filename: string;
+
+    switch (type) {
+      case 'users':
+        data = users;
+        filename = 'users.json';
+        break;
+      case 'projects':
+        data = projects;
+        filename = 'projects.json';
+        break;
+      case 'sessions':
+        data = sessions;
+        filename = 'sessions.json';
+        break;
+    }
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
-  const handleAddProject = () => {
-    setEditingProject(null);
-    setProjectDialogOpen(true);
-  };
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate('/');
-  };
-
-  const navItems = [
-    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { id: 'chats', icon: MessageSquare, label: 'AI Chats', badge: newChatCount },
-    { id: 'projects', icon: FolderOpen, label: 'Portfolio' },
-    { id: 'users', icon: Shield, label: 'User Roles' },
-    { id: 'analytics', icon: BarChart3, label: 'Analytics' },
-    { id: 'settings', icon: Settings, label: 'Settings' },
-  ];
-
-  if (isLoading) {
+  if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
 
+  if (!isAdmin) {
+    return null;
+  }
+
+  const filteredUsers = users.filter(
+    (u) =>
+      u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredProjects = projects.filter((p) =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Sidebar */}
-      <motion.aside
-        initial={{ x: -300 }}
-        animate={{ x: sidebarOpen ? 0 : -240 }}
-        className="fixed left-0 top-0 h-screen w-64 bg-card border-r border-border z-40 flex flex-col"
-      >
-        {/* Logo */}
-        <div className="p-6 border-b border-border">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-              <span className="text-lg font-bold text-primary-foreground">G</span>
-            </div>
-            <div>
-              <h2 className="font-bold">G-Squad</h2>
-              <p className="text-xs text-muted-foreground">Admin Portal</p>
-            </div>
-          </div>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-background via-surface-1 to-surface-2 relative overflow-hidden">
+      {/* Theme Toggle */}
+      <div className="fixed top-4 right-4 z-50">
+        <ThemeToggleSimple />
+      </div>
 
-        {/* Navigation */}
-        <ScrollArea className="flex-1 p-4">
-          <nav className="space-y-1">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${activeTab === item.id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'hover:bg-muted text-muted-foreground hover:text-foreground'
-                  }`}
-              >
-                <div className="flex items-center gap-3">
-                  <item.icon className="w-5 h-5" />
-                  <span className="font-medium">{item.label}</span>
-                </div>
-                {item.badge && item.badge > 0 && (
-                  <Badge variant="destructive" className="h-5 w-5 p-0 flex items-center justify-center text-xs">
-                    {item.badge}
-                  </Badge>
-                )}
-              </button>
-            ))}
-          </nav>
-        </ScrollArea>
+      {/* Animated background elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <motion.div
+          className="absolute -top-32 -right-32 w-64 h-64 bg-gradient-to-br from-destructive/20 to-warning/15 rounded-full blur-3xl"
+          animate={{
+            scale: [1, 1.4, 1],
+            opacity: [0.2, 0.4, 0.2],
+          }}
+          transition={{
+            duration: 15,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }}
+        />
+        <motion.div
+          className="absolute -bottom-32 -left-32 w-80 h-80 bg-gradient-to-tr from-primary/15 to-accent/10 rounded-full blur-3xl"
+          animate={{
+            scale: [1, 1.3, 1],
+            opacity: [0.15, 0.3, 0.15],
+          }}
+          transition={{
+            duration: 20,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: 3
+          }}
+        />
+      </div>
 
-        {/* User Info */}
-        <div className="p-4 border-t border-border">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center">
-              <Users className="w-5 h-5 text-muted-foreground" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm truncate">{user?.email}</p>
-              <p className="text-xs text-muted-foreground">Administrator</p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" className="w-full" onClick={handleSignOut}>
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
-          </Button>
-        </div>
-      </motion.aside>
-
-      {/* Main Content */}
-      <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-6'}`}>
-        {/* Header */}
-        <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-lg border-b border-border px-6 py-4">
+      {/* Enhanced Header */}
+      <header className="border-b border-border/50 bg-card-glass/90 backdrop-blur-xl sticky top-0 z-50 shadow-glass">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 hover:bg-muted rounded-lg"
-                aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-              >
-                {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-              </button>
-              <div>
-                <h1 className="text-xl font-bold capitalize">{activeTab === 'users' ? 'User Roles' : activeTab}</h1>
-                <p className="text-sm text-muted-foreground">
-                  {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                </p>
+              <Link to="/">
+                <Button variant="ghost" size="icon">
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              </Link>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-glow">
+                  <Sparkles className="h-5 w-5 text-primary-foreground" />
+                </div>
+                <div>
+                  <span className="text-xl font-bold text-foreground">GNEXUS</span>
+                  <span className="ml-2 text-xs bg-destructive/20 text-destructive px-2 py-0.5 rounded-full">
+                    Admin
+                  </span>
+                </div>
               </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={fetchData}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Content Area */}
-        <div className="p-6">
-          {activeTab === 'dashboard' && (
-            <div className="space-y-6">
-              {/* Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-5 bg-card border border-border rounded-2xl"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="p-2 bg-primary/10 rounded-xl">
-                      <MessageSquare className="w-5 h-5 text-primary" />
-                    </div>
-                    <Badge variant="secondary" className="text-xs">Today: {stats.todayChats}</Badge>
-                  </div>
-                  <h3 className="text-2xl font-bold">{stats.totalChats}</h3>
-                  <p className="text-sm text-muted-foreground">Total Conversations</p>
-                </motion.div>
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {/* Page Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-foreground mb-2">Admin Dashboard</h1>
+          <p className="text-muted-foreground">
+            Manage users, projects, and view system analytics
+          </p>
+        </div>
 
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 }}
-                  className="p-5 bg-card border border-border rounded-2xl"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="p-2 bg-green-500/10 rounded-xl">
-                      <Bot className="w-5 h-5 text-green-500" />
-                    </div>
-                    <Badge className="bg-green-500/10 text-green-500 text-xs">Live</Badge>
-                  </div>
-                  <h3 className="text-2xl font-bold">{stats.activeConversations}</h3>
-                  <p className="text-sm text-muted-foreground">Active Chats</p>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="p-5 bg-card border border-border rounded-2xl"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="p-2 bg-purple-500/10 rounded-xl">
-                      <FolderOpen className="w-5 h-5 text-purple-500" />
-                    </div>
-                    <Badge variant="secondary" className="text-xs">Portfolio</Badge>
-                  </div>
-                  <h3 className="text-2xl font-bold">{stats.totalProjects}</h3>
-                  <p className="text-sm text-muted-foreground">Projects</p>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
-                  className="p-5 bg-card border border-border rounded-2xl"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="p-2 bg-yellow-500/10 rounded-xl">
-                      <Star className="w-5 h-5 text-yellow-500" />
-                    </div>
-                    <Badge variant="secondary" className="text-xs">Rating</Badge>
-                  </div>
-                  <h3 className="text-2xl font-bold">
-                    {stats.avgRating > 0 ? `${stats.avgRating}/5` : 'N/A'}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">Satisfaction</p>
-                </motion.div>
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl border border-border bg-card p-6"
+          >
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+                <Users className="h-6 w-6 text-primary" />
               </div>
+              <div>
+                <p className="text-2xl font-bold text-foreground">{stats.totalUsers}</p>
+                <p className="text-sm text-muted-foreground">Total Users</p>
+              </div>
+            </div>
+          </motion.div>
 
-              {/* Two Column Layout */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Recent Conversations */}
-                <div className="bg-card border border-border rounded-2xl p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-semibold">Recent Conversations</h3>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setActiveTab('chats')}
-                    >
-                      View All
-                      <ChevronRight className="w-4 h-4 ml-1" />
-                    </Button>
-                  </div>
-                  <div className="space-y-3">
-                    {recentConversations.map((conv) => (
-                      <div
-                        key={conv.id}
-                        className="flex items-center justify-between p-3 bg-muted/50 rounded-xl hover:bg-muted transition-colors cursor-pointer"
-                        onClick={() => setActiveTab('chats')}
-                      >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
-                            <MessageSquare className="w-5 h-5 text-primary" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium text-sm">#{conv.session_id.slice(-8)}</p>
-                              <Badge variant="outline" className="text-xs">
-                                {conv.message_count} msgs
-                              </Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {conv.last_message_preview || 'No messages yet'}...
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <div className={`w-2 h-2 rounded-full ${conv.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground'
-                            }`} />
-                          <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(conv.created_at), { addSuffix: true })}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                    {recentConversations.length === 0 && (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-20" />
-                        <p>No conversations yet</p>
-                      </div>
-                    )}
-                  </div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="rounded-xl border border-border bg-card p-6"
+          >
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10">
+                <FolderOpen className="h-6 w-6 text-accent" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-foreground">{stats.totalProjects}</p>
+                <p className="text-sm text-muted-foreground">Total Projects</p>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="rounded-xl border border-border bg-card p-6"
+          >
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-success/10">
+                <Activity className="h-6 w-6 text-success" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-foreground">{stats.totalSessions}</p>
+                <p className="text-sm text-muted-foreground">Total Sessions</p>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="rounded-xl border border-border bg-card p-6"
+          >
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-warning/10">
+                <Layout className="h-6 w-6 text-warning" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-foreground">{stats.totalArtifacts}</p>
+                <p className="text-sm text-muted-foreground">Total Artifacts</p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="mb-6">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="users">Users</TabsTrigger>
+            <TabsTrigger value="projects">Projects</TabsTrigger>
+            <TabsTrigger value="sessions">Sessions</TabsTrigger>
+            <TabsTrigger value="ai-training" className="gap-2">
+              <Brain className="h-4 w-4" />
+              AI Training
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Search */}
+          <div className="flex items-center gap-4 mb-6">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+
+          <TabsContent value="overview">
+            <div className="rounded-xl border border-border bg-card p-6">
+              <h3 className="text-lg font-semibold text-foreground mb-4">System Overview</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg bg-secondary/50 p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Avg Artifacts per Project</p>
+                  <p className="text-xl font-bold text-foreground">
+                    {stats.totalProjects > 0
+                      ? (stats.totalArtifacts / stats.totalProjects).toFixed(1)
+                      : '0'}
+                  </p>
                 </div>
-
-                {/* Activity Log */}
-                <div className="bg-card border border-border rounded-2xl p-5">
-                  <ActivityLog />
+                <div className="rounded-lg bg-secondary/50 p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Avg Sessions per User</p>
+                  <p className="text-xl font-bold text-foreground">
+                    {stats.totalUsers > 0
+                      ? (stats.totalSessions / stats.totalUsers).toFixed(1)
+                      : '0'}
+                  </p>
                 </div>
               </div>
             </div>
-          )}
+          </TabsContent>
 
-          {activeTab === 'chats' && (
-            <LightErrorBoundary>
-              <EnhancedChatView />
-            </LightErrorBoundary>
-          )}
-
-          {activeTab === 'projects' && (
-            <div className="bg-card border border-border rounded-2xl">
+          <TabsContent value="users">
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
               <div className="p-4 border-b border-border flex items-center justify-between">
-                <h3 className="font-semibold">Portfolio Projects</h3>
-                <Button size="sm" onClick={handleAddProject}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Project
+                <h3 className="font-semibold text-foreground">All Users</h3>
+                <Button variant="outline" size="sm" onClick={() => exportData('users')}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
                 </Button>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Image</TableHead>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Featured</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Joined</TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {projects.map((project) => (
-                    <TableRow key={project.id}>
+                  {filteredUsers.map((u) => (
+                    <TableRow key={u.id}>
+                      <TableCell className="font-medium">{u.email}</TableCell>
+                      <TableCell>{u.full_name || '-'}</TableCell>
                       <TableCell>
-                        {project.image_url ? (
-                          <img
-                            src={project.image_url}
-                            alt={project.title}
-                            className="w-12 h-12 rounded-lg object-cover"
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
-                            <FolderOpen className="w-5 h-5 text-muted-foreground" />
-                          </div>
-                        )}
+                        <span
+                          className={`px-2 py-1 text-xs rounded-full ${u.role === 'admin'
+                            ? 'bg-destructive/20 text-destructive'
+                            : 'bg-muted text-muted-foreground'
+                            }`}
+                        >
+                          {u.role}
+                        </span>
                       </TableCell>
-                      <TableCell className="font-medium">{project.title}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{project.category}</Badge>
-                      </TableCell>
-                      <TableCell>{project.client || '-'}</TableCell>
-                      <TableCell>
-                        {project.featured ? (
-                          <Badge className="bg-primary">Featured</Badge>
-                        ) : (
-                          <Badge variant="secondary">Standard</Badge>
-                        )}
+                      <TableCell className="text-muted-foreground">
+                        {new Date(u.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEditProject(project)}
-                            aria-label={`Edit ${project.title}`}
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="text-destructive" aria-label={`Delete ${project.title}`}>
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Project?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This action cannot be undone. This will permanently delete the project "{project.title}".
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleDeleteProject(project.id)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => toggleAdminRole(u.id, u.role || 'user')}
+                              disabled={u.id === user?.id}
+                            >
+                              {u.role === 'admin' ? (
+                                <>
+                                  <UserX className="h-4 w-4 mr-2" />
+                                  Remove Admin
+                                </>
+                              ) : (
+                                <>
+                                  <UserCheck className="h-4 w-4 mr-2" />
+                                  Make Admin
+                                </>
+                              )}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
-          )}
+          </TabsContent>
 
-          {activeTab === 'users' && (
-            <LightErrorBoundary>
-              <div className="bg-card border border-border rounded-2xl p-6">
-                <UserRolesManager />
+          <TabsContent value="projects">
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="p-4 border-b border-border flex items-center justify-between">
+                <h3 className="font-semibold text-foreground">All Projects</h3>
+                <Button variant="outline" size="sm" onClick={() => exportData('projects')}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
               </div>
-            </LightErrorBoundary>
-          )}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredProjects.map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell>
+                        <span
+                          className={`px-2 py-1 text-xs rounded-full ${p.status === 'active'
+                            ? 'bg-success/20 text-success'
+                            : 'bg-muted text-muted-foreground'
+                            }`}
+                        >
+                          {p.status}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(p.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => deleteProject(p.id)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
 
-          {activeTab === 'analytics' && (
-            <LightErrorBoundary>
-              <div className="bg-card border border-border rounded-2xl p-6">
-                <AdminAnalytics />
+          <TabsContent value="sessions">
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="p-4 border-b border-border flex items-center justify-between">
+                <h3 className="font-semibold text-foreground">All Sessions</h3>
+                <Button variant="outline" size="sm" onClick={() => exportData('sessions')}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
               </div>
-            </LightErrorBoundary>
-          )}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Session ID</TableHead>
+                    <TableHead>Messages</TableHead>
+                    <TableHead>Artifacts</TableHead>
+                    <TableHead>Started</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sessions.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-mono text-xs">{s.id.slice(0, 8)}...</TableCell>
+                      <TableCell>{s.message_count}</TableCell>
+                      <TableCell>{s.artifact_count}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(s.start_time).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
 
-          {activeTab === 'settings' && (
-            <LightErrorBoundary>
-              <div className="bg-card border border-border rounded-2xl p-6">
-                <AdminSettings />
-              </div>
-            </LightErrorBoundary>
-          )}
-        </div>
+          <TabsContent value="ai-training">
+            <AITrainer />
+          </TabsContent>
+        </Tabs>
       </main>
-
-      {/* Project Form Dialog */}
-      <ProjectFormDialog
-        open={projectDialogOpen}
-        onOpenChange={setProjectDialogOpen}
-        project={editingProject}
-        onSuccess={fetchData}
-      />
     </div>
   );
-};
-
-export default Admin;
+}

@@ -1,125 +1,233 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
+import { Sparkles, Mail, Lock, User, ArrowRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import { useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { z } from 'zod';
 
-const Auth = () => {
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+const authSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  fullName: z.string().optional(),
+});
+
+export default function Auth() {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const { user, signIn, signUp } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        navigate('/admin');
-      }
-    });
+    if (user) {
+      navigate('/');
+    }
+  }, [user, navigate]);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        navigate('/admin');
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  const handleGoogleSignIn = async () => {
-    setIsGoogleLoading(true);
+  const validateForm = () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/admin`,
-        },
-      });
+      authSchema.parse({ email, password, fullName: isSignUp ? fullName : undefined });
+      setErrors({});
+      return true;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const newErrors: Record<string, string> = {};
+        error.errors.forEach((err) => {
+          if (err.path[0]) {
+            newErrors[err.path[0] as string] = err.message;
+          }
+        });
+        setErrors(newErrors);
+      }
+      return false;
+    }
+  };
 
-      if (error) throw error;
-    } catch (error: any) {
-      console.error('Google sign-in error:', error);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!validateForm()) return;
+
+    setIsLoading(true);
+
+    try {
+      if (isSignUp) {
+        const { error } = await signUp(email, password, fullName);
+        if (error) {
+          if (error.message.includes('already registered')) {
+            toast({
+              title: 'Account exists',
+              description: 'This email is already registered. Please sign in instead.',
+              variant: 'destructive',
+            });
+          } else {
+            throw error;
+          }
+        } else {
+          toast({
+            title: 'Account created!',
+            description: 'You can now sign in to your account.',
+          });
+          setIsSignUp(false);
+        }
+      } else {
+        const { error } = await signIn(email, password);
+        if (error) {
+          if (error.message.includes('Invalid login')) {
+            toast({
+              title: 'Invalid credentials',
+              description: 'Please check your email and password.',
+              variant: 'destructive',
+            });
+          } else {
+            throw error;
+          }
+        } else {
+          navigate('/');
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Something went wrong. Please try again.';
       toast({
-        title: "Google sign-in failed",
-        description: error.message,
-        variant: "destructive",
+        title: 'Error',
+        description: message,
+        variant: 'destructive',
       });
-      setIsGoogleLoading(false);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      {/* Background Effects */}
-      <div className="fixed inset-0 -z-10">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-      </div>
-
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
         className="w-full max-w-md"
       >
-        <div className="bg-card border border-border rounded-3xl p-8 shadow-2xl">
-          {/* Logo */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-2xl mb-4">
-              <span className="text-2xl font-bold text-primary-foreground">G</span>
-            </div>
-            <h1 className="text-2xl font-bold">G-Squad Admin</h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              Sign in with Google to access the admin portal
+        {/* Logo */}
+        <div className="flex items-center justify-center gap-3 mb-8">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-glow">
+            <Sparkles className="h-6 w-6 text-primary-foreground" />
+          </div>
+          <span className="text-2xl font-bold text-foreground">GNEXUS</span>
+        </div>
+
+        {/* Card */}
+        <div className="rounded-2xl border border-border bg-card p-8">
+          <div className="text-center mb-6">
+            <h1 className="text-2xl font-bold text-foreground mb-2">
+              {isSignUp ? 'Create your account' : 'Welcome back'}
+            </h1>
+            <p className="text-muted-foreground">
+              {isSignUp
+                ? 'Start designing with AI-powered tools'
+                : 'Sign in to continue your design journey'}
             </p>
           </div>
 
-          {/* Google Sign-In Button */}
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full h-12 text-base"
-            onClick={handleGoogleSignIn}
-            disabled={isGoogleLoading}
-          >
-            {isGoogleLoading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <>
-                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isSignUp && (
+              <div className="space-y-2">
+                <Label htmlFor="fullName">Full Name</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="fullName"
+                    type="text"
+                    placeholder="John Doe"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="pl-10"
                   />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  />
-                </svg>
-                Continue with Google
-              </>
+                </div>
+              </div>
             )}
-          </Button>
 
-          {/* Back to Home */}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              {errors.email && (
+                <p className="text-xs text-destructive">{errors.email}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              {errors.password && (
+                <p className="text-xs text-destructive">{errors.password}</p>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full bg-primary hover:bg-primary/90"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  {isSignUp ? 'Create Account' : 'Sign In'}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </>
+              )}
+            </Button>
+          </form>
+
           <div className="mt-6 text-center">
-            <a href="/" className="text-sm text-muted-foreground hover:text-foreground">
-              ← Back to website
-            </a>
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setErrors({});
+              }}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {isSignUp ? (
+                <>Already have an account? <span className="text-primary">Sign in</span></>
+              ) : (
+                <>Don't have an account? <span className="text-primary">Sign up</span></>
+              )}
+            </button>
           </div>
         </div>
+
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          By continuing, you agree to our Terms of Service and Privacy Policy
+        </p>
       </motion.div>
     </div>
   );
-};
-
-export default Auth;
+}
